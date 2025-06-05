@@ -27,8 +27,6 @@ static INSTANCE: LazyLock<Mutex<DisableCameraSmoothing>> = LazyLock::new(|| {
         .unwrap()
     };
 
-    println!("DisableCameraSmoothing target address: {:#X}", target_address);
-
     let original_bytes = unsafe { libmem::read_memory::<_>(target_address) };
 
     Mutex::new(DisableCameraSmoothing {

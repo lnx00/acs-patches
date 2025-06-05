@@ -3,25 +3,24 @@
 use std::{ffi::c_void, sync::LazyLock};
 
 use windows::{
-    Win32::{
+    core::s, Win32::{
         Foundation::{HANDLE, NTSTATUS},
         System::{
             LibraryLoader::{GetModuleHandleA, GetProcAddress},
-            Memory::PAGE_EXECUTE_READWRITE,
+            Memory::{PAGE_EXECUTE_READWRITE, PAGE_PROTECTION_FLAGS},
             Threading::{
-                GetCurrentProcessId, OpenProcess, PROCESS_ACCESS_RIGHTS, PROCESS_VM_OPERATION,
+                GetCurrentProcessId, OpenProcess, PROCESS_VM_OPERATION,
             },
         },
-    },
-    core::s,
+    }
 };
 
 type NtProtectVirtualMemoryFn = unsafe extern "system" fn(
     ProcessHandle: HANDLE,
     BaseAddress: *mut *mut c_void,
     RegionSize: *mut usize,
-    NewProtect: u32,
-    OldProtect: *mut u32,
+    NewProtect: PAGE_PROTECTION_FLAGS,
+    OldProtect: *mut PAGE_PROTECTION_FLAGS,
 ) -> NTSTATUS;
 
 static NT_PROTECT_VIRTUAL_MEMORY: LazyLock<NtProtectVirtualMemoryFn> = LazyLock::new(|| unsafe {
@@ -33,6 +32,7 @@ static NT_PROTECT_VIRTUAL_MEMORY: LazyLock<NtProtectVirtualMemoryFn> = LazyLock:
     func
 });
 
+/// Patches the given bytes.
 pub fn patch_bytes(address: usize, bytes: &[u8]) -> Result<(), String> {
     unsafe {
         let old_protect = libmem::prot_memory(address, 0, libmem::Prot::XRW)
@@ -57,14 +57,14 @@ pub fn patch_bytes_nt(address: usize, bytes: &[u8]) -> Result<(), String> {
 
         let mut base_address = address as *mut c_void;
         let mut size = bytes.len();
-        let mut old_protect = 0;
+        let mut old_protect = PAGE_PROTECTION_FLAGS(0);
 
         // Change protection to RWX
         let status = NT_PROTECT_VIRTUAL_MEMORY(
             process_handle,
             &mut base_address,
             &mut size,
-            PAGE_EXECUTE_READWRITE.0,
+            PAGE_EXECUTE_READWRITE,
             &mut old_protect,
         );
 
