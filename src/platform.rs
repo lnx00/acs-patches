@@ -10,7 +10,7 @@ pub enum MsgBoxType {
     Error,
 }
 
-fn to_pcstr(text: &str) -> PCSTR {
+pub fn to_pcstr(text: &str) -> PCSTR {
     PCSTR(format!("{}\0", text).as_ptr())
 }
 

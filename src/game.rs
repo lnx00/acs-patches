@@ -21,5 +21,5 @@ pub fn wait_for_game() {
         std::thread::sleep(std::time::Duration::from_millis(100));
     }
 
-    thread::sleep(std::time::Duration::from_secs(15));
+    thread::sleep(std::time::Duration::from_secs(3));
 }

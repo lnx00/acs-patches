@@ -1,7 +1,37 @@
-use ntapi::ntmmapi::NtProtectVirtualMemory;
-use ntapi::winapi::shared::ntdef::{HANDLE, NT_SUCCESS, NTSTATUS, ULONG};
-use ntapi::winapi::um::winnt::{MEM_COMMIT, PAGE_EXECUTE_READWRITE, PROCESS_VM_OPERATION, PVOID};
-use windows::Win32::System::Threading::{GetCurrentProcessId, OpenProcess, PROCESS_ACCESS_RIGHTS};
+#[allow(dead_code)]
+
+use std::{ffi::c_void, sync::LazyLock};
+
+use windows::{
+    Win32::{
+        Foundation::{HANDLE, NTSTATUS},
+        System::{
+            LibraryLoader::{GetModuleHandleA, GetProcAddress},
+            Memory::PAGE_EXECUTE_READWRITE,
+            Threading::{
+                GetCurrentProcessId, OpenProcess, PROCESS_ACCESS_RIGHTS, PROCESS_VM_OPERATION,
+            },
+        },
+    },
+    core::s,
+};
+
+type NtProtectVirtualMemoryFn = unsafe extern "system" fn(
+    ProcessHandle: HANDLE,
+    BaseAddress: *mut *mut c_void,
+    RegionSize: *mut usize,
+    NewProtect: u32,
+    OldProtect: *mut u32,
+) -> NTSTATUS;
+
+static NT_PROTECT_VIRTUAL_MEMORY: LazyLock<NtProtectVirtualMemoryFn> = LazyLock::new(|| unsafe {
+    let ntdll = GetModuleHandleA(s!("ntdll.dll")).unwrap();
+
+    let fn_ptr = GetProcAddress(ntdll, s!("NtProtectVirtualMemory")).unwrap();
+    let func: NtProtectVirtualMemoryFn = std::mem::transmute(fn_ptr);
+
+    func
+});
 
 pub fn patch_bytes(address: usize, bytes: &[u8]) -> Result<(), String> {
     unsafe {
@@ -16,44 +46,40 @@ pub fn patch_bytes(address: usize, bytes: &[u8]) -> Result<(), String> {
     Ok(())
 }
 
+/// Patches the given bytes.
+/// Uses NtProtectVirtualMemory instead of VirtualProtect to bypass some anti-tamper checks.
 pub fn patch_bytes_nt(address: usize, bytes: &[u8]) -> Result<(), String> {
     unsafe {
-        // Get current process ID
+        // Open handle with proper access privileges
         let process_id = GetCurrentProcessId();
+        let process_handle = OpenProcess(PROCESS_VM_OPERATION, false, process_id)
+            .expect("failed to open process handle");
 
-        // Open handle to current process with PROCESS_VM_OPERATION privileges
-        let process_handle = OpenProcess(
-            PROCESS_ACCESS_RIGHTS(PROCESS_VM_OPERATION),
-            false,
-            process_id,
-        );
-        // Convert Windows HANDLE to ntapi HANDLE type
-        let process_handle = process_handle.expect("failed to get handle").0 as HANDLE;
-
-        //let process_handle = -1isize as HANDLE;
-
-        let mut base_address = address as PVOID;
+        let mut base_address = address as *mut c_void;
         let mut size = bytes.len();
         let mut old_protect = 0;
 
-        let status = NtProtectVirtualMemory(
+        // Change protection to RWX
+        let status = NT_PROTECT_VIRTUAL_MEMORY(
             process_handle,
             &mut base_address,
             &mut size,
-            PAGE_EXECUTE_READWRITE,
+            PAGE_EXECUTE_READWRITE.0,
             &mut old_protect,
         );
 
-        if !NT_SUCCESS(status) {
+        if status.is_err() {
             return Err(format!(
-                "NtProtectVirtualMemory failed with status: {:#x}",
-                status
+                "NtProtectVirtualMemory failed with status: {:#X}",
+                status.0
             ));
         }
 
+        // Write the bytes
         libmem::write_memory(address, bytes);
 
-        let status = NtProtectVirtualMemory(
+        // Restore previous protection
+        let status = NT_PROTECT_VIRTUAL_MEMORY(
             process_handle,
             &mut base_address,
             &mut size,
@@ -61,10 +87,10 @@ pub fn patch_bytes_nt(address: usize, bytes: &[u8]) -> Result<(), String> {
             &mut old_protect,
         );
 
-        if !NT_SUCCESS(status) {
+        if status.is_err() {
             return Err(format!(
-                "NtProtectVirtualMemory failed with status: {:#x}",
-                status
+                "NtProtectVirtualMemory failed with status: {:#X}",
+                status.0
             ));
         }
     }

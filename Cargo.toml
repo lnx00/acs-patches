@@ -11,7 +11,6 @@ crate-type = ["cdylib"]
 toml = "0.8"
 serde = { version = "1.0", features = ["derive"] }
 libmem = "5"
-ntapi = "0.4.1"
 windows = { version = "0.61", features = [
     "Win32_Foundation",
     "Win32_Security",
@@ -21,5 +20,6 @@ windows = { version = "0.61", features = [
     "Win32_UI_WindowsAndMessaging",
     "Win32_UI_Input_KeyboardAndMouse",
     "Win32_System_LibraryLoader",
+    "Win32_System_Memory",
     "Wdk_System_Threading",
 ] }
