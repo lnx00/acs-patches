@@ -21,14 +21,25 @@ const PKG_VERSION: Option<&str> = option_env!("CARGO_PKG_VERSION");
 
 const VK_F11: i32 = 0x7A;
 
-fn run() -> Result<(), String> {
+fn run(config: &Config) -> Result<(), String> {
     println!("Disabling integrity checks...");
     game::disable_integrity_checks()?;
 
-    println!("Integrity checks disabled! Waiting for the game...");
-    game::wait_for_game();
+    println!("Integrity checks patched! Waiting for the game...");
+    if !game::wait_for_game(15) {
+        println!("Timeout while waiting for the game! Trying to apply patches anyways...");
 
-    println!("Game ready! Applying patches...");
+        if !config.suppress_integrity_warning {
+            platform::msg_box(
+                "Timeout while waiting for the game's integrity checks! The patch will try to continue, but the game might crash.",
+                "ACS Patches",
+                platform::MsgBoxType::Warning,
+            );
+        }
+    } else {
+        println!("Game ready! Applying patches...");
+    }
+
     patches::run_all_patches()?;
 
     println!("All patches applied successfully! Press F11 to unload.");
@@ -53,7 +64,7 @@ fn main_thread(dll_module: SendWrapper<HINSTANCE>) {
     }
 
     // Run main logic
-    if let Err(e) = run() {
+    if let Err(e) = run(&config) {
         eprintln!("Error: {}", e);
         platform::msg_box(&e, "Error", platform::MsgBoxType::Error);
     }

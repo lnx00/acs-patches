@@ -5,6 +5,7 @@ use serde::Deserialize;
 #[derive(Deserialize)]
 pub struct Config {
     pub show_console: bool,
+    pub suppress_integrity_warning: bool,
 }
 
 impl Config {
@@ -20,6 +21,7 @@ impl Default for Config {
     fn default() -> Self {
         Self {
             show_console: false,
+            suppress_integrity_warning: false,
         }
     }
 }
